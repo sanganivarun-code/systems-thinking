@@ -231,7 +231,7 @@ a.link:hover {
 h1, h2, h3 { font-weight: 500; letter-spacing: -0.012em; color: var(--ink); }
 
 .page-title {
-  font-size: clamp(2rem, 5vw, 2.7rem);
+  font-size: clamp(1rem, 2.5vw, 1.35rem);
   line-height: 1.08;
   margin: 0.4rem 0 0.6rem;
   font-weight: 500;
