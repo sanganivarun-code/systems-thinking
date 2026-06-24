@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Designing a rate limiter that won't lie to you · Varun Sangani</title>
+<meta name="description" content="Token bucket vs. sliding window, where the counters live, and why approximately correct is usually the right call at the edge." />
+<link rel="preload" href="../assets/fonts/newsreader-normal-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="../assets/fonts/ibm-plex-mono-400-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+<div class="wrap" data-screen-label="Blog post">
+  <header class="site-head">
+    <a class="brand" href="../index.html">Varun Sangani</a>
+    <nav class="nav">
+      <a href="../blog.html">Notebook</a>
+      <a href="../projects.html">Projects</a>
+      <a href="../about.html">About</a>
+    </nav>
+  </header>
+
+  <main>
+    <article class="prose prose--post">
+      <header class="post-head">
+        <a class="back-link" href="../blog.html">&larr; All writing</a>
+        <h1 class="page-title">Designing a rate limiter that won&rsquo;t lie to you</h1>
+        <div class="post-meta">
+          <span>Jun 06, 2026</span>
+          <span>·</span>
+          <span>7 min read</span>
+          <span>·</span>
+          <span>rate limiting</span>
+        </div>
+      </header>
+
+      <p>Almost every public system needs a rate limiter, and almost every rate limiter ships with a quiet lie baked in: it claims to enforce &ldquo;100 requests per minute&rdquo; while actually enforcing something fuzzier. That&rsquo;s usually fine &mdash; but only if you <em>chose</em> the fuzziness on purpose. Here&rsquo;s how I&rsquo;d reason about it.</p>
+
+      <h2>The problem, stated plainly</h2>
+      <p>We want to cap how often a given client (an API key, a user, an IP) can hit an endpoint, to protect the system from abuse and from accidental stampedes. The cap has to hold under real traffic: bursty, concurrent, and spread across many servers. And the enforcement itself can&rsquo;t become the bottleneck it&rsquo;s meant to prevent.</p>
+
+      <div class="callout">
+        <span class="eyebrow">How I&rsquo;ll frame this</span>
+        <p>Three parts, every time: the <strong>solution</strong> I&rsquo;d propose, the <strong>rationale</strong> for each decision, and the <strong>risks</strong> I&rsquo;d want named before we shipped it.</p>
+      </div>
+
+      <h2>The solution</h2>
+      <p>Use a <strong>token bucket</strong> per client, with the counters held in a shared, in-memory store (Redis or equivalent) and enforced at the edge &mdash; the API gateway &mdash; before requests reach application servers.</p>
+      <p>Each client gets a bucket that refills at a steady rate (say, 100 tokens/minute) up to a maximum capacity (say, 100). Every request spends one token. Empty bucket, request rejected with <code>429</code> and a <code>Retry-After</code> header. The whole check is a single atomic operation:</p>
+      <pre><code>-- Atomic token-bucket check (Lua, runs inside Redis)
+-- KEYS[1] = bucket key   ARGV = now, rate, capacity, cost
+local b = redis.call('HMGET', KEYS[1], 'tokens', 'ts')
+local tokens = tonumber(b[1]) or capacity
+local ts     = tonumber(b[2]) or now
+tokens = math.min(capacity, tokens + (now - ts) * rate)
+if tokens &lt; cost then return 0 end          -- reject
+redis.call('HMSET', KEYS[1], 'tokens', tokens - cost, 'ts', now)
+return 1                                       -- allow</code></pre>
+
+      <h2>The rationale</h2>
+      <h3>Why token bucket, not a fixed window</h3>
+      <p>A fixed-window counter (&ldquo;reset the count every minute&rdquo;) is the simplest thing that works, and it&rsquo;s what I&rsquo;d reach for if traffic were smooth. But it has a notorious edge: a client can fire 100 requests at <code>00:59</code> and another 100 at <code>01:00</code> &mdash; 200 requests in two seconds while never &ldquo;breaking&rdquo; the limit. Token bucket smooths that out because it thinks in terms of a continuous refill rate, not a wall-clock boundary. It also naturally allows a controlled <em>burst</em> up to the bucket capacity, which is usually what you actually want: tolerate a short spike, punish sustained abuse.</p>
+
+      <h3>Why the counters live in a shared store</h3>
+      <p>The moment you have more than one server enforcing the limit, per-server counters stop meaning anything &mdash; ten servers each allowing 100/min is a 1,000/min limit by accident. A shared store gives every node one source of truth. The cost is a network hop per request, which is why the check has to be cheap and atomic (hence the Lua script: read-modify-write in one round trip, no race between concurrent requests).</p>
+
+      <h3>Why enforce at the edge</h3>
+      <p>Rejecting at the gateway means abusive traffic dies before it consumes an app server, a database connection, or a thread pool. The limiter protects the expensive part of the system by living in the cheap part. As a TPM, this is the line I&rsquo;d underline in the design review: <em>the further out you reject, the more the limit is worth.</em></p>
+
+      <blockquote>A rate limiter you can&rsquo;t reason about under failure is just a second outage waiting for the first one.</blockquote>
+
+      <h2>The risks &mdash; what I&rsquo;d flag before shipping</h2>
+      <p>This is the part that gets skipped in interviews and remembered in incidents. None of these are reasons not to ship; they&rsquo;re things I&rsquo;d want a decision on, in writing.</p>
+      <ul>
+        <li><strong>The store is now a dependency on the hot path.</strong> If Redis is slow or down, what happens? &ldquo;Fail open&rdquo; (allow everything) protects availability but removes the limit exactly when load is high. &ldquo;Fail closed&rdquo; (reject everything) protects the backend but turns a cache blip into a full outage. I&rsquo;d default to fail-open with a tight timeout and an alert &mdash; but that&rsquo;s a business call, not a technical one.</li>
+        <li><strong>Hot keys.</strong> One enormous client (or one IP behind a corporate NAT) can concentrate all its traffic on a single bucket key, and that key&rsquo;s shard becomes a hotspot. Mitigations: shard the key, or accept approximate limiting with local pre-checks.</li>
+        <li><strong>&ldquo;Approximately correct&rdquo; is a feature, not a bug &mdash; if you say so.</strong> To avoid a network hop on every request, many systems do local token buckets per node and reconcile periodically. That means the global limit is enforced loosely. Totally fine for abuse prevention; <em>not</em> fine if the limit is a billing or quota boundary. The risk is shipping the loose version against a requirement that needed the strict one.</li>
+        <li><strong>Clock and refill drift.</strong> The math leans on <code>now</code>. Skew between nodes, or pushing time logic into application code instead of the store, reintroduces the races we just removed. Keep the time source and the arithmetic in one place.</li>
+        <li><strong>The client experience of a 429.</strong> A limit with no <code>Retry-After</code>, or with retries that all wake up at the same instant, creates a thundering herd that re-limits everyone. Honest headers plus jittered backoff on the client side are part of the design, not an afterthought.</li>
+      </ul>
+
+      <h2>What I&rsquo;d actually recommend</h2>
+      <p>For most systems: token bucket, shared store, edge enforcement, <strong>fail-open with alerting</strong>, and an explicit written note that the limit is &ldquo;approximately correct&rdquo; and must not be used as a billing boundary without revisiting the design. That last sentence is the whole job &mdash; not picking the algorithm, but making sure the limit we built matches the limit we promised.</p>
+
+      <hr />
+      <p class="mono">Filed under: rate limiting, edge, trade-offs. Got a sharper take or a war story? <a class="link" href="mailto:hello@sanganivarun.me">Tell me</a>.</p>
+
+      <nav class="post-nav" style="display:flex;justify-content:space-between;gap:1rem;margin-top:2rem;">
+        <a class="back-link" href="../blog.html">&larr; All writing</a>
+        <a class="back-link" href="../blog.html">Next: Idempotency keys &rarr;</a>
+      </nav>
+    </article>
+  </main>
+
+  <footer class="site-foot">
+    <div class="foot-links">
+      <a href="https://github.com/sanganivarun-code" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://www.linkedin.com/in/sanganivarun" target="_blank" rel="noopener">LinkedIn</a>
+      <a href="mailto:hello@sanganivarun.me">Email</a>
+    </div>
+  </footer>
+</div>
+</body>
+</html>
