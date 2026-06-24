@@ -30,7 +30,7 @@
         <h1 class="page-title">URL Shortener</h1>
         <div class="post-meta">
           <!-- EDIT: date as "Mon DD, YYYY", read time, and tags -->
-          <span>Jun 00, 2026</span>
+          <span>Jun 23, 2026</span>
           <span>·</span>
           <span>0 min read</span>
           <span>·</span>
@@ -43,20 +43,23 @@
            One paragraph. What breaks, who feels it,
            why it's harder than it looks.
       ════════════════════════════════════════════ -->
+      <hr>
       <h2>The problem</h2>
-      <p>Paste a long URL, get a short link; visiting the short link redirects to the original.</p>
+      <p>Design a URL shortener (like TinyURL or bit.ly). A user pastes in a long URL and gets back a short link; when someone visits the short link, they're redirected to the original.</p>
 
       <!-- ═══════════════════════════════════════════
            CLARIFYING QUESTIONS
            What you'd ask in a real design review
            before drawing a single box.
       ════════════════════════════════════════════ -->
+      <hr>
       <h2>Clarifying questions</h2>
       <p>Before designing anything I&rsquo;d want answers to:</p>
       <ul>
-        <li><strong>Question?</strong> Because it changes X.</li>
-        <li><strong>Question?</strong> Because it changes X.</li>
-        <li><strong>Question?</strong> Because it changes X.</li>
+        <li><strong>Does the link expire? Because it affects the immutability.</strong> Permanent by default, with an optional user-set expiry.</li>
+        <li><strong>Can a user create Custom Aliases? Because it affects uniqueness of each generated link.</strong> Optional. Aliases must be globally unqiue and reject on collision.</li>
+        <li><strong>Is analytics for redirection in scope?</strong>Yes.</li>
+        <li><strong>What if the same URL is submitted for shortening more than once? Because it affects analytics for redirection.</strong> Mint a fresh short code each time so analytics can remain separate.</li>
       </ul>
 
       <!-- ═══════════════════════════════════════════
@@ -64,27 +67,35 @@
            Who touches the system, what it must do,
            and what it must never do.
       ════════════════════════════════════════════ -->
-      <h2>Actors &amp; requirements</h2>
+      <hr>
+      <h2>Actors &amp; Requirements</h2>
 
       <h3>Actors</h3>
       <ul>
-        <li><strong>Actor 1</strong> — what they do</li>
-        <li><strong>Actor 2</strong> — what they do</li>
+        <li><strong>Creator / Shortener</strong> -  submits a long URL, receives a short link.</li>
+        <li><strong>Visitor / Clicker</strong> - follows the short link and is redirected.</li>
+        <li><strong>Analytics Consumer</strong> - usually the creator returning later to see click stats.</li>
+        <li><strong>(Optional - Real World) Preview Crawlers</strong> - WhatsApp/Slack/iMessage bots that fetch the link to build a preview card. Uses the direct path, but useful to know.</li>
       </ul>
 
       <h3>Functional requirements</h3>
       <ul>
         <li>The system must&hellip;</li>
-        <li>The system must&hellip;</li>
-        <li>The system must&hellip;</li>
+        <ul>
+          <li>Create a short link from a long URL.</li>
+          <li>Redirect a short link to its original URL.</li>
+          <li>Track and report click analytics for a link.</li>
+        </ul>
       </ul>
 
       <h3>Non-functional requirements</h3>
       <ul>
-        <li><strong>Availability:</strong> X nines — REASON.</li>
-        <li><strong>Latency:</strong> pXX under X ms — REASON.</li>
-        <li><strong>Consistency:</strong> strong / eventual — REASON.</li>
-        <li><strong>Scale:</strong> X requests/sec at peak — drives sizing below.</li>
+        <li><strong>Ready Heavy: </strong> roughly 100:1 Read:Write ratio, drives caching and storage.</li>
+        <li><strong>Latency: </strong> redirect p99 under 100 ms (latency)</li>
+        <li><strong>Throughput: </strong> High Requests / sec.</li>
+        <li><strong>CAP -> AP: </strong> Favour availability because mappings are immutable, so no write conflicts. Note: The write path (alias uniqueness) needs stronger consistency.</li>
+        <li><strong>Durability: </strong> High. Never lose a mapping, that's the core functionality.</li>
+        <li><strong>Availability Target: </strong> 99.9%+.</li>
       </ul>
 
       <!-- ═══════════════════════════════════════════
