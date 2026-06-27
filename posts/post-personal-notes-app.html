@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- EDIT: post title and site name -->
+<title>Personal Notes App · Systems Thinking</title>
+<!-- EDIT: one-sentence description for search/social previews -->
+<meta name="description" content="DESCRIPTION" />
+<link rel="preload" href="../assets/fonts/newsreader-normal-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="../assets/fonts/ibm-plex-mono-400-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="../assets/styles.css" />
+</head>
+<body>
+<div class="wrap" data-screen-label="Blog post">
+  <header class="site-head">
+    <a class="brand" href="../index.html">Varun Sangani</a>
+    <nav class="nav">
+      <a href="../blog.html">Notebook</a>
+      <a href="../projects.html">Projects</a>
+      <a href="../about.html">About</a>
+    </nav>
+  </header>
+
+  <main>
+    <article class="prose prose--post">
+      <header class="post-head">
+        <a class="back-link" href="../blog.html">&larr; All writing</a>
+        <!-- EDIT: post title -->
+        <h1 class="page-title">Personal Notes App</h1>
+        <div class="post-meta">
+          <!-- EDIT: date as "Mon DD, YYYY", read time, and tags -->
+          <span>Jun 27, 2026</span>
+          <span>·</span>
+          <span>0 min read</span>
+          <span>·</span>
+          <span>TAG, TAG</span>
+        </div>
+      </header>
+
+      <!-- ═══════════════════════════════════════════
+           PROBLEM
+           One paragraph. What breaks, who feels it,
+           why it's harder than it looks.
+      ════════════════════════════════════════════ -->
+      <h2>The problem</h2>
+      <p>Design a personal notes app (like Apple Notes or Google Keep). A user can write notes on their phone, and see those same notes on their laptop. Keep it to a single user's own notes syncing across their own devices — no sharing or collaboration with other people.</p>
+
+      <!-- ═══════════════════════════════════════════
+           CLARIFYING QUESTIONS
+           What you'd ask in a real design review
+           before drawing a single box.
+      ════════════════════════════════════════════ -->
+      <h2>Clarifying questions</h2>
+      <p>Before designing anything I&rsquo;d want answers to:</p>
+      <ul>
+        <li><strong>Works Offline? Affects sync status and consistency.</strong> Yes, required.</li>
+        <li><strong>Same notes edited on two devices offline? Affects consistency.</strong> Must be handled.</li>
+        <li><strong>Real-time editing across devices? Affects Latency.</strong> Few seconds refresh is okay, no live keystrokes sync.</li>
+        <li><strong>Autosave? Affects write frequency and durability.</strong> Yes, no explicit save button.</li>
+        <li><strong>Can you search through the notes? Introduces new latency and scalability requirement.</strong> Basic full-text, in scope.</li>
+        <li><strong>What kind of attachments are allowed? Affects storage and bandwidth.</strong> Text plus small images, no videos.</li>
+      </ul>
+
+      <!-- ═══════════════════════════════════════════
+           ACTORS & REQUIREMENTS
+           Who touches the system, what it must do,
+           and what it must never do.
+      ════════════════════════════════════════════ -->
+      <h2>Actors &amp; requirements</h2>
+
+      <h3>Actors</h3>
+      <ul>
+        <li>Creator, Reader and Editor of the notes, operating across multiple devices.</li>
+      </ul>
+
+      <h3>Functional requirements</h3>
+      <ul>
+        <li><strong>C</strong>reate a note.</li>
+        <li><strong>R</strong>ead a note.</li>
+        <li><strong>U</strong>pdate / Edit a note.</li>
+        <li><strong>D</strong>elete a note.</li>
+        <li>List / Search a note.</li>
+        <li>Sync changes across user's devices.</li>
+      </ul>
+
+      <h3>Non-functional requirements</h3>
+      <ul>
+        <li><strong>Durability:</strong> Never lose committed data, includes notes that are edited offline.</li>
+        <li><strong>Eventual Consistency (AP):</strong> offline editing forces this requirement.</li>
+        <li><strong>Latency:</strong> local read/writes are instant, sync propogation can be relaxed (seconds).</li>
+        <li><strong>Throughput / Scalability:</strong> modest per user.</li>
+      </ul>
+
+      <!-- ═══════════════════════════════════════════
+           BACK OF THE ENVELOPE
+           Numbers that justify the architecture.
+           Use the table for estimates; add a callout
+           for the key conclusion.
+      ════════════════════════════════════════════ -->
+      <h2>Back of the envelope</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>Estimate</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Daily active users</td>
+            <td>X M</td>
+            <td>Assumption or source</td>
+          </tr>
+          <tr>
+            <td>Peak writes/sec</td>
+            <td>~X k</td>
+            <td>How you derived it</td>
+          </tr>
+          <tr>
+            <td>Peak reads/sec</td>
+            <td>~X k</td>
+            <td>Read:write ratio</td>
+          </tr>
+          <tr>
+            <td>Storage per year</td>
+            <td>~X TB</td>
+            <td>Avg object size × write rate</td>
+          </tr>
+          <tr>
+            <td>Bandwidth (inbound)</td>
+            <td>~X Gbps</td>
+            <td>Avg payload × writes/sec</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <span class="eyebrow">The number that drives everything</span>
+        <p>STATE THE ONE SCALE CONCLUSION that shapes the design — e.g. &ldquo;X k writes/sec means we can&rsquo;t afford a single SQL writer.&rdquo;</p>
+      </div>
+
+      <!-- ═══════════════════════════════════════════
+           HIGH-LEVEL DESIGN
+           The 30,000-ft view. One diagram, then the
+           narrative that walks through it.
+           To add a diagram:
+             1. Save your image in posts/images/
+             2. Replace IMAGE-FILENAME and CAPTION below
+      ════════════════════════════════════════════ -->
+      <h2>High-level design</h2>
+      <p>NARRATIVE OVERVIEW — one paragraph describing the system end to end before going deep.</p>
+
+      <figure>
+        <img src="images/IMAGE-FILENAME.png" alt="High-level architecture diagram" />
+        <figcaption>CAPTION — e.g. &ldquo;Request flow from client through gateway to storage layer.&rdquo;</figcaption>
+      </figure>
+
+      <h3>Component: NAME</h3>
+      <p>What it does and why it sits here.</p>
+
+      <h3>Component: NAME</h3>
+      <p>What it does and why it sits here.</p>
+
+      <!-- ═══════════════════════════════════════════
+           LOW-LEVEL DESIGN
+           Deep dive on the 1-2 components that matter
+           most for this problem.
+           Same image instructions as HLD above.
+      ════════════════════════════════════════════ -->
+      <h2>Low-level design</h2>
+      <p>WHICH COMPONENT are you going deep on, and why this one over the others.</p>
+
+      <figure>
+        <img src="images/IMAGE-FILENAME.png" alt="Low-level design diagram" />
+        <figcaption>CAPTION</figcaption>
+      </figure>
+
+      <h3>Data model</h3>
+      <pre><code>TABLE / SCHEMA NAME
+  field_name   TYPE    -- note
+  field_name   TYPE    -- note</code></pre>
+
+      <h3>Critical path: NAME</h3>
+      <p>Walk through the most important sequence step by step.</p>
+      <ol>
+        <li>Step one.</li>
+        <li>Step two.</li>
+        <li>Step three.</li>
+      </ol>
+
+      <!-- ═══════════════════════════════════════════
+           RISKS & TRADE-OFFS
+           The TPM section. Things you'd want in writing
+           before shipping. Not reasons not to ship —
+           decisions that need an owner.
+      ════════════════════════════════════════════ -->
+      <h2>Risks &amp; trade-offs</h2>
+      <p>None of these are blockers. They&rsquo;re things I&rsquo;d want a decision on before we shipped.</p>
+      <ul>
+        <li><strong>RISK.</strong> Explanation and mitigation.</li>
+        <li><strong>RISK.</strong> Explanation and mitigation.</li>
+        <li><strong>RISK.</strong> Explanation and mitigation.</li>
+      </ul>
+
+      <blockquote>OPTIONAL CLOSING THOUGHT — a one-liner that captures the core judgment call.</blockquote>
+
+      <h2>What I&rsquo;d actually recommend</h2>
+      <p>SUMMARY RECOMMENDATION in 2-3 sentences. What to build, what to defer, and what to write down.</p>
+
+      <hr />
+      <!-- EDIT: tags and email -->
+      <p class="mono">Filed under: TAG, TAG. Got a sharper take or a war story? <a class="link" href="mailto:hello@sanganivarun.com">Tell me</a>.</p>
+
+      <nav class="post-nav" style="display:flex;justify-content:space-between;gap:1rem;margin-top:2rem;">
+        <a class="back-link" href="../blog.html">&larr; All writing</a>
+        <!-- EDIT: link and title of next post, or remove this link -->
+        <a class="back-link" href="NEXT-POST.html">Next: NEXT POST TITLE &rarr;</a>
+      </nav>
+    </article>
+  </main>
+
+  <footer class="site-foot">
+    <div class="foot-links">
+      <a href="https://github.com/sanganivarun-code" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://www.linkedin.com/in/sanganivarun" target="_blank" rel="noopener">LinkedIn</a>
+      <a href="mailto:hello@sanganivarun.com">Email</a>
+    </div>
+  </footer>
+</div>
+</body>
+</html>
